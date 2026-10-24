@@ -12,5 +12,8 @@
     "test": "npm test -w server",
     "service:install": "node scripts/install-service.cjs",
     "service:uninstall": "node scripts/install-service.cjs --uninstall"
+  },
+  "engines": {
+    "node": ">=22.5"
   }
 }
