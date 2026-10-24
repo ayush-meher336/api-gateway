@@ -1,6 +1,8 @@
 import type { ProviderType } from '../db/types.js';
 import type { ProviderAdapter } from './types.js';
 import { openaiCompatAdapter } from './openaiCompat.js';
+import { anthropicAdapter } from './anthropic.js';
+import { geminiAdapter } from './gemini.js';
 
 const BASE_URLS: Record<ProviderType, string> = {
   openai: 'https://api.openai.com/v1',
@@ -16,7 +18,10 @@ const BASE_URLS: Record<ProviderType, string> = {
   custom_openai: '',
 };
 
-const special: Partial<Record<ProviderType, ProviderAdapter>> = {};
+const special: Partial<Record<ProviderType, ProviderAdapter>> = {
+  anthropic: anthropicAdapter,
+  gemini: geminiAdapter,
+};
 
 export function registerAdapter(type: ProviderType, a: ProviderAdapter) {
   special[type] = a;
