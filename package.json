@@ -1,11 +1,16 @@
 {
   "name": "ai-gateway",
   "private": true,
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "build": "npm run build -w web && npm run build -w server",
     "start": "node server/dist/index.js",
     "dev": "npm run dev -w server",
-    "test": "npm test -w server"
+    "test": "npm test -w server",
+    "service:install": "node scripts/install-service.cjs",
+    "service:uninstall": "node scripts/install-service.cjs --uninstall"
   }
 }
