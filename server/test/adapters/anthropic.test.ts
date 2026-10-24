@@ -140,3 +140,12 @@ describe('anthropic adapter', () => {
     ]);
   });
 });
+
+describe('anthropic metadata', () => {
+  it('maps OpenAI metadata/user to Anthropic metadata.user_id only', () => {
+    const b = JSON.parse(a.buildRequest('chat', { messages: [{ role: 'user', content: 'x' }], metadata: { app: 'x', tier: 'y' }, user: 'u1' }, 'm', p, 'k').body!);
+    expect(b.metadata).toEqual({ user_id: 'u1' });
+    const b2 = JSON.parse(a.buildRequest('chat', { messages: [{ role: 'user', content: 'x' }], metadata: { app: 'x' } }, 'm', p, 'k').body!);
+    expect(b2.metadata).toBeUndefined();
+  });
+});

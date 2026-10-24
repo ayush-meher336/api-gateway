@@ -40,7 +40,10 @@ function toAnthropicBody(body: any, model: string) {
   }
   const out: any = { model, messages, max_tokens: body.max_completion_tokens ?? body.max_tokens ?? 4096 };
   if (system.length) out.system = system.join('\n\n');
-  for (const k of ['temperature', 'top_p', 'top_k', 'stream', 'metadata', 'thinking'] as const) if (body[k] !== undefined) out[k] = body[k];
+  for (const k of ['temperature', 'top_p', 'top_k', 'stream', 'thinking'] as const) if (body[k] !== undefined) out[k] = body[k];
+  // Anthropic metadata accepts only user_id; arbitrary OpenAI metadata would be a 400
+  const userId = body.metadata?.user_id ?? body.user;
+  if (typeof userId === 'string' && userId) out.metadata = { user_id: userId };
   const stop = toStopList(body.stop);
   if (stop) out.stop_sequences = stop;
   if (body.tools?.length) {

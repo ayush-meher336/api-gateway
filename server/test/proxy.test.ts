@@ -305,3 +305,19 @@ describe('proxy', () => {
     expect(s.repos.upstreamKeys.list().some((k) => k.lastUsedAt)).toBe(true);
   });
 });
+
+describe('cooldown backoff under concurrency', () => {
+  it('concurrent 429s on the same key advance its fail streak', async () => {
+    await setup({ pool: { mode: 'explicit', keyIds: [keyIds[0]] }, maxRetries: 0 });
+    handler = () => ({ status: 429, json: {} });
+    await Promise.all([chat(), chat(), chat()]);
+    expect(s.repos.upstreamKeys.get(keyIds[0])!.failStreak).toBe(3);
+    s.repos.upstreamKeys.setStatus(keyIds[0], 'cooldown', { cooldownUntil: 0 });
+    s.snapshots.updateKey(keyIds[0], { cooldownUntil: 0 });
+    await chat();
+    const k = s.repos.upstreamKeys.get(keyIds[0])!;
+    expect(k.failStreak).toBe(4);
+    // 30s * 2^(4-1) = 240s of backoff
+    expect(k.cooldownUntil! - Date.now()).toBeGreaterThan(230_000);
+  });
+});

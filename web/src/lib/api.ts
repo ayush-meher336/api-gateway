@@ -17,6 +17,8 @@ export const setUnauthorizedHandler = (fn: () => void) => {
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const { json, ...rest } = init;
   const headers = new Headers(rest.headers);
+  // the server rejects state-changing admin calls without this header (CSRF guard)
+  headers.set('x-gateway-admin', '1');
   if (json !== undefined) headers.set('content-type', 'application/json');
   let res: Response;
   try {

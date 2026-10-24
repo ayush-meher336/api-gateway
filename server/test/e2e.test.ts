@@ -18,7 +18,7 @@ let output = '';
 async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(base + path, {
     method,
-    headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...headers },
+    headers: { 'x-gateway-admin': '1', ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const setCookie = res.headers.get('set-cookie');

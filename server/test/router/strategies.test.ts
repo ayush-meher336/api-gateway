@@ -148,3 +148,14 @@ describe('nextCooldown', () => {
     expect(nextCooldown('client_error', 1, undefined, now)).toBeNull();
   });
 });
+
+describe('RouterState memory', () => {
+  it('recordUse prunes old entries even when least_used is never called', () => {
+    vi.useFakeTimers();
+    const st = new RouterState();
+    for (let i = 0; i < 1000; i++) st.recordUse(1);
+    vi.advanceTimersByTime(61_000);
+    st.recordUse(1);
+    expect((st as any).uses.get(1).length).toBe(1);
+  });
+});

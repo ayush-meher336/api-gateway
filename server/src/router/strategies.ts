@@ -25,6 +25,8 @@ export class RouterState {
 
   recordUse(keyId: number, now = Date.now()): void {
     const arr = this.uses.get(keyId) ?? [];
+    // prune here too, or keys never routed with least_used would grow forever
+    while (arr.length && arr[0] <= now - WINDOW_MS) arr.shift();
     arr.push(now);
     this.uses.set(keyId, arr);
   }

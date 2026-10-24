@@ -15,13 +15,15 @@ let app: FastifyInstance;
 let cookie: string;
 let dataDir: string;
 
+const CSRF = { 'x-gateway-admin': '1' };
+
 async function req(method: string, url: string, payload?: unknown, headers: Record<string, string> = {}) {
-  return app.inject({ method: method as any, url: `/admin/api/${url}`, payload: payload as any, headers: { cookie, ...headers } });
+  return app.inject({ method: method as any, url: `/admin/api/${url}`, payload: payload as any, headers: { cookie, ...CSRF, ...headers } });
 }
 
 async function login() {
-  await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'supersecret' } });
-  const r = await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' } });
+  await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'supersecret' }, headers: CSRF });
+  const r = await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' }, headers: CSRF });
   cookie = String(r.headers['set-cookie']).split(';')[0];
 }
 
@@ -50,20 +52,20 @@ describe('admin auth', () => {
   it('reports setup state, then setup → login → protected route', async () => {
     expect((await req('GET', 'auth/status')).json()).toEqual({ setupRequired: true, authenticated: false });
     expect((await req('GET', 'providers')).statusCode).toBe(401);
-    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'short' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'short' }, headers: CSRF })).statusCode).toBe(400);
     await login();
     expect((await req('GET', 'auth/status')).json()).toEqual({ setupRequired: false, authenticated: true });
     expect((await req('GET', 'providers')).statusCode).toBe(200);
     // setup cannot be repeated
-    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'anotherpass' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'anotherpass' }, headers: CSRF })).statusCode).toBe(409);
   });
 
   it('rejects wrong passwords and rate-limits login attempts', async () => {
     await login();
     for (let i = 0; i < 5; i++) {
-      expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'wrongwrong' } })).statusCode).toBe(401);
+      expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'wrongwrong' }, headers: CSRF })).statusCode).toBe(401);
     }
-    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' } })).statusCode).toBe(429);
+    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' }, headers: CSRF })).statusCode).toBe(429);
   });
 
   it('logout invalidates the session', async () => {
@@ -76,12 +78,34 @@ describe('admin auth', () => {
     await login();
     expect((await req('POST', 'auth/password', { current: 'nope', next: 'brandnewpass' })).statusCode).toBe(401);
     expect((await req('POST', 'auth/password', { current: 'supersecret', next: 'brandnewpass' })).statusCode).toBe(200);
-    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'brandnewpass' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'brandnewpass' }, headers: CSRF })).statusCode).toBe(200);
   });
 });
 
 describe('admin resources', () => {
   beforeEach(login);
+
+  it('rejects state-changing requests without the admin header (CSRF)', async () => {
+    const r = await app.inject({ method: 'POST', url: '/admin/api/providers', payload: { name: 'x', type: 'groq' }, headers: { cookie } });
+    expect(r.statusCode).toBe(403);
+    expect(r.json().error.code).toBe('csrf_check_failed');
+    const cross = await req('POST', 'providers', { name: 'x', type: 'groq' }, { 'sec-fetch-site': 'same-site' });
+    expect(cross.statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: '/admin/api/auth/logout', headers: { cookie } })).statusCode).toBe(403);
+    expect((await req('GET', 'providers', undefined, { 'x-gateway-admin': '' })).statusCode).toBe(200);
+  });
+
+  it('config export with secrets survives an undecryptable key', async () => {
+    const p = (await req('POST', 'providers', { name: 'oa', type: 'openai' })).json();
+    await req('POST', 'upstream-keys/bulk', { providerId: p.id, secrets: 'sk-good-aaaa1111\nsk-bad-bbbb2222' });
+    const bad = s.repos.upstreamKeys.list()[1];
+    s.db.prepare("UPDATE upstream_keys SET secret_enc = 'garbage' WHERE id = ?").run(bad.id);
+    const r = await req('GET', 'config/export?includeSecrets=1');
+    expect(r.statusCode).toBe(200);
+    const keys = r.json().upstreamKeys;
+    expect(keys[0].secret).toBe('sk-good-aaaa1111');
+    expect(keys[1]).toMatchObject({ secret: null, secretError: 'decrypt_failed' });
+  });
 
   it('validation errors use the standard error shape', async () => {
     const r = await req('POST', 'providers', { name: '', type: 'bogus' });
@@ -215,7 +239,7 @@ describe('admin resources', () => {
       backup,
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]);
-    const r = await app.inject({ method: 'POST', url: '/admin/api/settings/restore', payload: body, headers: { cookie, 'content-type': `multipart/form-data; boundary=${boundary}` } });
+    const r = await app.inject({ method: 'POST', url: '/admin/api/settings/restore', payload: body, headers: { cookie, ...CSRF, 'content-type': `multipart/form-data; boundary=${boundary}` } });
     expect(r.statusCode).toBe(200);
     expect(r.json().restartRequired).toBe(true);
     expect(existsSync(join(dataDir, 'restore-pending.db'))).toBe(true);
@@ -234,9 +258,9 @@ describe('admin resources', () => {
     const s2 = createServices(openDb(':memory:'), randomBytes(32));
     const app2 = buildApp(s2, { dataDir });
     await app2.ready();
-    await app2.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'supersecret' } });
-    const c2 = String((await app2.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' } })).headers['set-cookie']).split(';')[0];
-    const imp = await app2.inject({ method: 'POST', url: '/admin/api/config/import', payload: exported, headers: { cookie: c2 } });
+    await app2.inject({ method: 'POST', url: '/admin/api/auth/setup', payload: { password: 'supersecret' }, headers: CSRF });
+    const c2 = String((await app2.inject({ method: 'POST', url: '/admin/api/auth/login', payload: { password: 'supersecret' }, headers: CSRF })).headers['set-cookie']).split(';')[0];
+    const imp = await app2.inject({ method: 'POST', url: '/admin/api/config/import', payload: exported, headers: { cookie: c2, ...CSRF } });
     expect(imp.statusCode).toBe(200);
     expect(s2.repos.upstreamKeys.list()).toHaveLength(2);
     expect(s2.repos.aliases.list()[0].targets).toHaveLength(1);
@@ -248,7 +272,7 @@ describe('admin resources', () => {
     const auth = await app2.inject({ method: 'GET', url: '/v1/models', headers: { authorization: `Bearer ${gk.key}` } });
     expect(auth.statusCode).toBe(200);
     // importing twice is idempotent
-    await app2.inject({ method: 'POST', url: '/admin/api/config/import', payload: exported, headers: { cookie: c2 } });
+    await app2.inject({ method: 'POST', url: '/admin/api/config/import', payload: exported, headers: { cookie: c2, ...CSRF } });
     expect(s2.repos.upstreamKeys.list()).toHaveLength(2);
     expect(s2.repos.gatewayKeys.list()).toHaveLength(1);
     await app2.close();

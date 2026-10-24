@@ -3,6 +3,15 @@ import type { Repos } from '../db/repos/index.js';
 import type { GatewayKey, KeyPool } from '../db/types.js';
 import { readSettings } from './settings.js';
 
+/** One undecryptable key (e.g. after a master key change) must not abort the whole export. */
+function exportSecret(repos: Repos, id: number): { secret: string | null; secretError?: string } {
+  try {
+    return { secret: repos.upstreamKeys.getSecret(id) };
+  } catch {
+    return { secret: null, secretError: 'decrypt_failed' };
+  }
+}
+
 /**
  * Portable config. Cross-references use names (provider), `provider/upstreamModelId` (model)
  * and export refs (upstream key), so a file imports cleanly into a database with different ids.
@@ -36,7 +45,7 @@ export function exportConfig(repos: Repos, includeSecrets: boolean) {
       dailyRequestCap: k.dailyRequestCap,
       dailyTokenCap: k.dailyTokenCap,
       disabled: k.status === 'disabled',
-      ...(includeSecrets ? { secret: repos.upstreamKeys.getSecret(k.id) } : {}),
+      ...(includeSecrets ? exportSecret(repos, k.id) : {}),
     })),
     models: models.map(({ id: _id, providerId, ...m }) => ({ provider: pName.get(providerId), ...m })),
     aliases: repos.aliases.list().map((a) => ({
