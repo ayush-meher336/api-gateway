@@ -1,0 +1,11 @@
+{
+  "name": "ai-gateway",
+  "private": true,
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "node server/dist/index.js",
+    "dev": "npm run dev -w server",
+    "test": "npm test -w server"
+  }
+}
