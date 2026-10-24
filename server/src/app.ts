@@ -2,9 +2,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { GatewayError, errorBody } from './errors.js';
 import type { Services } from './services.js';
 import { registerProxyRoutes } from './proxy/routes.js';
+import { registerAdmin } from './admin/index.js';
+import { resolve } from 'node:path';
 
 export interface AppOptions {
   logger?: any;
+  /** Where backups are staged for restore. Defaults to ./data. */
+  dataDir?: string;
 }
 
 export function buildApp(s: Services, opts: AppOptions = {}): FastifyInstance {
@@ -21,6 +25,9 @@ export function buildApp(s: Services, opts: AppOptions = {}): FastifyInstance {
       const msg = err.issues?.map((i: any) => `${i.path?.join('.') || 'body'}: ${i.message}`).join('; ') ?? 'Invalid request';
       return reply.code(400).send(errorBody('invalid_request_error', 'validation_error', msg));
     }
+    if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed')) {
+      return reply.code(409).send(errorBody('invalid_request_error', 'already_exists', 'An item with that name or value already exists'));
+    }
     const status = typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
     if (status >= 500) {
       s.logger.error({ err, url: req.url }, 'unhandled request error');
@@ -35,5 +42,6 @@ export function buildApp(s: Services, opts: AppOptions = {}): FastifyInstance {
   });
 
   registerProxyRoutes(app, s);
+  app.register(async (scope) => registerAdmin(scope, s, opts.dataDir ?? resolve('data')));
   return app;
 }

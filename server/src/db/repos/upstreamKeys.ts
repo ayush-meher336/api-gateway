@@ -29,6 +29,10 @@ export function upstreamKeysRepo(db: Db, masterKey: Buffer) {
       if (!row) throw new Error(`upstream key ${id} not found`);
       return decrypt(row.secret_enc, masterKey);
     },
+    findIdBySecret(providerId: number, secret: string): number | null {
+      const row = db.prepare('SELECT id FROM upstream_keys WHERE secret_hash = ?').get(secretHash(providerId, secret.trim())) as { id: number } | undefined;
+      return row?.id ?? null;
+    },
     /** Inserts trimmed, non-empty, not-yet-present secrets. */
     createMany(providerId: number, secrets: string[], defaults: UpstreamKeyDefaults) {
       const created: UpstreamKey[] = [];
