@@ -54,6 +54,19 @@ describe('app', () => {
     expect((await app.inject('/assets/app.js')).body).toBe('console.log(1)');
   });
 
+  it('serves assets added after startup (dashboard rebuilt while running)', async () => {
+    writeFileSync(join(webDir, 'assets', 'new-hash.js'), 'console.log(2)');
+    const r = await app.inject('/assets/new-hash.js');
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toBe('console.log(2)');
+  });
+
+  it('a missing asset is a 404, never the HTML shell', async () => {
+    const r = await app.inject('/assets/gone.js');
+    expect(r.statusCode).toBe(404);
+    expect(r.body).not.toContain('dashboard');
+  });
+
   it('malformed JSON gives a 400 standard body', async () => {
     const r = await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: { 'content-type': 'application/json' }, payload: '{bad' });
     expect(r.statusCode).toBe(400);

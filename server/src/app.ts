@@ -46,11 +46,16 @@ export function buildApp(s: Services, opts: AppOptions = {}): FastifyInstance {
   });
 
   const webDir = opts.webDir && existsSync(join(opts.webDir, 'index.html')) ? opts.webDir : null;
-  if (webDir) app.register(fastifyStatic, { root: webDir, wildcard: false, index: false });
+  // wildcard mode looks files up per request, so a dashboard rebuilt while running is served without a restart
+  if (webDir) {
+    app.register(fastifyStatic, { root: webDir, index: false });
+    app.get('/', (_req, reply) => reply.type('text/html').sendFile('index.html'));
+  }
 
   app.setNotFoundHandler((req, reply) => {
     const path = req.url.split('?')[0];
-    if (webDir && req.method === 'GET' && !isApiPath(path)) {
+    const looksLikeFile = /\.[a-z0-9]+$/i.test(path.split('/').pop() ?? '');
+    if (webDir && req.method === 'GET' && !isApiPath(path) && !looksLikeFile) {
       return reply.type('text/html').sendFile('index.html');
     }
     reply.code(404).send(errorBody('invalid_request_error', 'not_found', `No route for ${req.method} ${path}`));
