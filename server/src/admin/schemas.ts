@@ -82,8 +82,9 @@ export const gatewayKeyCreate = z.object({
   enabled: z.boolean().optional(),
   expiresAt: z.number().int().positive().nullable().optional(),
   allowedAliases: z.array(z.string()).nullable().optional(),
-  allowedModelIds: idList.nullable().optional(),
-  allowedProviderIds: idList.nullable().optional(),
+  // null = all; an empty list would block every request, so require at least one
+  allowedModelIds: idList.min(1, 'select at least one model, or allow all').nullable().optional(),
+  allowedProviderIds: idList.min(1, 'select at least one provider, or allow all').nullable().optional(),
   pool: pool.optional(),
   strategy: z.enum(STRATEGIES).optional(),
   maxRetries: z.number().int().min(0).max(20).optional(),

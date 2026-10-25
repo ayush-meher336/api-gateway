@@ -126,4 +126,10 @@ CREATE TABLE usage_rollups (
 CREATE INDEX usage_rollups_start ON usage_rollups(bucket, bucket_start);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `,
+  // An empty model/provider allowlist meant "allow nothing" — never intended (the wizard let it slip
+  // through). Treat it as "all". Empty alias lists stay: "no aliases, only these models" is meaningful.
+  `
+UPDATE gateway_keys SET allowed_model_ids = NULL WHERE allowed_model_ids = '[]';
+UPDATE gateway_keys SET allowed_provider_ids = NULL WHERE allowed_provider_ids = '[]';
+`,
 ];

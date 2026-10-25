@@ -123,3 +123,18 @@ describe('buildCandidates', () => {
     expect(c.map((x) => x.key.id)).toEqual([ids.keys1[0]]);
   });
 });
+
+describe('scope error messages', () => {
+  it('says the key access settings excluded an existing alias', () => {
+    try {
+      resolveTargets('gpt-4o', gk({ allowedProviderIds: [9999] }), snap());
+      expect.unreachable();
+    } catch (e) {
+      expect((e as GatewayError).code).toBe('model_not_allowed');
+      expect((e as GatewayError).message).toMatch(/exists but this API key's access settings/);
+    }
+  });
+  it('says the model does not exist when nothing matches at all', () => {
+    expect(() => resolveTargets('no-such-model', gk(), snap())).toThrow(/No model or alias named "no-such-model"/);
+  });
+});

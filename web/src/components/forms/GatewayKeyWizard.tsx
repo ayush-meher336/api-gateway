@@ -126,7 +126,9 @@ export function GatewayKeyWizard({ initial, onClose, onCreated }: { initial?: Ga
     [['gateway-keys']],
   );
   const poolValid = f.pool.mode === 'all' || (f.pool.mode === 'explicit' ? f.pool.keyIds.length : f.pool.mode === 'tags' ? f.pool.tags.length : f.pool.providerIds.length) > 0;
-  const valid = f.name.trim() && poolValid && jsonOk.d && jsonOk.o;
+  // A restriction with nothing ticked would block every request — never what anyone means.
+  const emptyScope = [f.allowedModelIds?.length === 0 && 'models', f.allowedProviderIds?.length === 0 && 'providers'].filter(Boolean) as string[];
+  const valid = f.name.trim() && poolValid && jsonOk.d && jsonOk.o && !emptyScope.length;
   const last = step === STEPS.length - 1;
 
   return (
@@ -289,6 +291,12 @@ export function GatewayKeyWizard({ initial, onClose, onCreated }: { initial?: Ga
             <Switch checked={f.logBodies} onChange={(v) => set('logBodies', v)} label="Log bodies" />
             <span>Store full request and response bodies in logs<br /><span className="text-xs text-muted">Useful for debugging; uses disk and keeps prompts on this machine.</span></span>
           </label>
+        </div>
+      )}
+      {emptyScope.length > 0 && (
+        <div className="mt-4 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm">
+          Access: you turned off “All {emptyScope.join(' / ')}” but selected none, which would block every request. Select at least one or switch “All” back on.{' '}
+          <button type="button" className="font-medium text-accent hover:underline" onClick={() => setStep(1)}>Go to Access</button>
         </div>
       )}
       <div className="mt-4"><ErrorNote error={save.error} /></div>

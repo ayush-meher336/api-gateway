@@ -51,5 +51,24 @@ export function resolveTargets(requested: string, gk: GatewayKey, snap: ConfigSn
     if (bare.length) return { aliasId: null, targets: bare.map((model) => ({ model, weight: 1, priority: snap.providers.get(model.providerId)!.priority })) };
   }
 
-  throw new GatewayError(404, 'invalid_request_error', 'model_not_allowed', `Model "${requested}" does not exist or is not allowed for this key`);
+  throw new GatewayError(
+    404,
+    'invalid_request_error',
+    'model_not_allowed',
+    existsIgnoringScope(requested, snap)
+      ? `"${requested}" exists but this API key's access settings (allowed aliases, models or providers) exclude it`
+      : `No model or alias named "${requested}" is enabled on this gateway`,
+  );
+}
+
+/** Whether the name would resolve for an unrestricted key — tells "not allowed" apart from "not there". */
+function existsIgnoringScope(requested: string, snap: ConfigSnapshot): boolean {
+  const usable = (m: Model | undefined) => !!m && m.enabled && !!snap.providers.get(m.providerId)?.enabled;
+  const alias = snap.aliasesByName.get(requested);
+  if (alias?.enabled && alias.targets.some((t) => t.enabled && usable(snap.models.get(t.modelId)))) return true;
+  const slash = requested.indexOf('/');
+  const p = slash > 0 ? snap.providersByName.get(requested.slice(0, slash).toLowerCase()) : undefined;
+  return [...snap.models.values()].some(
+    (m) => usable(m) && (m.upstreamModelId === requested || (p && m.providerId === p.id && m.upstreamModelId === requested.slice(slash + 1))),
+  );
 }

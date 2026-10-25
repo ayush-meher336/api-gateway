@@ -173,6 +173,11 @@ describe('admin resources', () => {
     const regen = (await req('POST', `gateway-keys/${created.id}/regenerate`)).json();
     expect(regen.key).not.toBe(created.key);
     expect((await req('POST', 'gateway-keys', { name: 'x', strategy: 'nope' })).statusCode).toBe(400);
+    const empty = await req('POST', 'gateway-keys', { name: 'x', allowedModelIds: [], allowedProviderIds: [] });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json().error.message).toMatch(/allowedModelIds/);
+    expect((await req('PATCH', `gateway-keys/${created.id}`, { allowedProviderIds: [] })).statusCode).toBe(400);
+    expect((await req('PATCH', `gateway-keys/${created.id}`, { allowedAliases: [] })).statusCode).toBe(200);
   });
 
   it('logs list with filters and cursor pagination, detail with attempts', async () => {
