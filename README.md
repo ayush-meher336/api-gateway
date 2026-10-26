@@ -80,7 +80,7 @@ For each request the gateway:
 
 | Upstream result | What happens |
 |---|---|
-| 429 rate limit | The key cools down for `Retry-After`, or 30s doubling up to 15 min, and the gateway tries the next key |
+| 429 rate limit | That key skips **only that model** for `Retry-After` or 15s; its status is untouched. If a second key is refused for the same model within 10s, the model is treated as busy on that provider and skipped for ~10s, so the request fails over to the next provider. If every option is rate limiting, the client gets 429 |
 | 5xx, network error, timeout | The key cools down for 15s and the gateway tries the next key |
 | 401 / 403 | The key is marked **invalid** (it shows in Alerts) and the gateway tries the next key |
 | 400 / 404 / 422 (your request) | The error is returned as-is, without retry |

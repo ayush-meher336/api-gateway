@@ -1,9 +1,11 @@
 import { COOLDOWN } from '../router/cooldown.js';
+import { RATE_LIMIT_DEFAULTS } from '../router/rateLimits.js';
 import type { Repos } from '../db/repos/index.js';
 
 export const SETTING_DEFAULTS = {
   retentionDays: 90,
-  rateLimitCooldownMs: 30_000,
+  /** How long a key skips one model after that model returned 429 on it. */
+  rateLimitCooldownMs: 15_000,
   serverErrorCooldownMs: 15_000,
   maxCooldownMs: 15 * 60_000,
   defaultMaxRetries: 3,
@@ -23,5 +25,7 @@ export function applySettings(repos: Repos): GatewaySettings {
   COOLDOWN.rateLimitBaseMs = st.rateLimitCooldownMs;
   COOLDOWN.serverErrorMs = st.serverErrorCooldownMs;
   COOLDOWN.maxMs = st.maxCooldownMs;
+  RATE_LIMIT_DEFAULTS.keyModelMs = st.rateLimitCooldownMs;
+  RATE_LIMIT_DEFAULTS.maxMs = st.maxCooldownMs;
   return st;
 }

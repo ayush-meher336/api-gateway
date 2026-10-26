@@ -2,6 +2,7 @@ import type { Db } from './db/client.js';
 import { createRepos, type Repos } from './db/repos/index.js';
 import { SnapshotStore } from './router/snapshot.js';
 import { KeyLimiter } from './router/limiter.js';
+import { RATE_LIMIT_DEFAULTS, RateLimitTracker } from './router/rateLimits.js';
 import { RouterState } from './router/strategies.js';
 import { LogWriter } from './logging/logWriter.js';
 import { UsageCache } from './logging/usageCache.js';
@@ -30,6 +31,8 @@ export function createServices(db: Db, masterKey: Buffer, opts: { fetchFn?: Fetc
     snapshots,
     router,
     limiter: new KeyLimiter(),
+    // shares RATE_LIMIT_DEFAULTS so Settings changes apply live
+    rateLimits: new RateLimitTracker(RATE_LIMIT_DEFAULTS),
     usage: new UsageCache(db),
     logWriter: new LogWriter(db, logger),
     fetchFn: opts.fetchFn ?? ((url, init) => fetch(url, init as RequestInit)),

@@ -7,7 +7,7 @@ export const COOLDOWN = {
   serverErrorMs: 15_000,
 };
 
-function parseRetryAfter(h: string | undefined, now: number): number | null {
+export function parseRetryAfter(h: string | undefined, now: number): number | null {
   if (!h) return null;
   const secs = Number(h);
   if (Number.isFinite(secs) && secs >= 0) return secs * 1000;

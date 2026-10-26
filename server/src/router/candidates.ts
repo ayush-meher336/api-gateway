@@ -11,7 +11,8 @@ export interface Candidate {
 }
 
 export interface KeyAvailability {
-  allows(key: UpstreamKey): boolean;
+  /** Per-call check: rate limits, caps, and 429 cooldowns for this key on this model. */
+  allows(key: UpstreamKey, model: Model): boolean;
 }
 
 function inPool(gk: GatewayKey, k: UpstreamKey): boolean {
@@ -42,7 +43,7 @@ export function buildCandidates(gk: GatewayKey, targets: Target[], snap: ConfigS
     const provider = snap.providers.get(t.model.providerId);
     if (!provider || !provider.enabled) continue;
     for (const key of snap.keysByProvider.get(provider.id) ?? []) {
-      if (!inPool(gk, key) || !keyUsable(key, now) || !avail.allows(key)) continue;
+      if (!inPool(gk, key) || !keyUsable(key, now) || !avail.allows(key, t.model)) continue;
       out.push({ provider, model: t.model, key, targetWeight: t.weight, targetPriority: t.priority });
     }
   }

@@ -94,20 +94,64 @@ describe('proxy', () => {
     expect(l.ttft_ms).not.toBeNull();
   });
 
-  it('429 with Retry-After fails over and cools the key down', async () => {
+  it('429 fails over and cools that key down for that model only, without touching key status', async () => {
     handler = (_req, n) => (n === 0 ? { status: 429, json: { error: { message: 'slow down' } }, headers: { 'retry-after': '5' } } : { json: chatJson() });
-    const before = Date.now();
     const r = await chat();
     expect(r.statusCode).toBe(200);
     const first = keyOf(up.seen[0]);
     expect(keyOf(up.seen[1])).not.toBe(first);
     const k = s.repos.upstreamKeys.list().find((x) => s.repos.upstreamKeys.getSecret(x.id) === first)!;
-    expect(k.status).toBe('cooldown');
-    expect(k.cooldownUntil!).toBeGreaterThanOrEqual(before + 5000);
-    expect(k.cooldownUntil!).toBeLessThan(before + 7000);
+    expect(k.status).toBe('active');
+    expect(k.failStreak).toBe(0);
+    const fastModelId = s.repos.models.list().find((m) => m.upstreamModelId === 'up-model')!.id;
+    expect(s.rateLimits.keyAllowed(k.id, fastModelId, Date.now())).toBe(false);
+    const other = s.repos.models.list().find((m) => m.upstreamModelId === 'emb')!.id;
+    expect(s.rateLimits.keyAllowed(k.id, other, Date.now())).toBe(true);
     const [l] = await logs(1);
     expect(l.attempts).toBe(2);
     expect(s.db.prepare('SELECT count(*) c FROM request_attempts').get()).toEqual({ c: 2 });
+  });
+
+  it('a key cooled for one model still serves other models', async () => {
+    handler = (_req, n) => (n === 0 ? { status: 429, json: {} } : { json: chatJson() });
+    await setup({ pool: { mode: 'explicit', keyIds: [keyIds[0]] }, maxRetries: 0 });
+    expect((await chat()).statusCode).toBe(429);
+    const r = await chat({ model: 'mock/emb' });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it('after two keys are refused for the same model, the rest of that provider is skipped and another provider serves', async () => {
+    const up2 = await startMockUpstream(() => ({ json: chatJson('from backup') }));
+    try {
+      const p2 = s.repos.providers.create({ name: 'backup', type: 'custom_openai', baseUrl: up2.url, timeoutMs: 2000 }).id;
+      s.repos.upstreamKeys.createMany(p2, ['sk-backup'], {});
+      const m2 = s.repos.models.create({ providerId: p2, upstreamModelId: 'up-model' });
+      const alias = s.repos.aliases.list()[0];
+      // primary provider first, backup only as fallback
+      s.repos.aliases.update(alias.id, { targets: [{ modelId: alias.targets[0].modelId, priority: 0 }, { modelId: m2.id, priority: 1 }] });
+      await setup({ strategy: 'priority_failover', maxRetries: 5 });
+      handler = () => ({ status: 429, json: { error: { message: 'Channel rate limit reached for model' } } });
+      const r = await chat();
+      expect(r.statusCode).toBe(200);
+      expect(r.json().choices[0].message.content).toBe('from backup');
+      // only two of the three primary keys were tried before failing over
+      expect(up.seen).toHaveLength(2);
+      // and while the model is paused, the next request goes straight to the backup
+      await chat();
+      expect(up.seen).toHaveLength(2);
+      expect(up2.seen).toHaveLength(2);
+      expect(s.repos.upstreamKeys.list(providerId).every((k) => k.status === 'active')).toBe(true);
+    } finally {
+      await up2.close();
+    }
+  });
+
+  it('when every option is rate limited the client gets 429, not 502', async () => {
+    handler = () => ({ status: 429, json: { error: { message: 'Channel rate limit reached for model' } } });
+    const r = await chat();
+    expect(r.statusCode).toBe(429);
+    expect(r.json().error).toMatchObject({ code: 'upstream_rate_limited' });
+    expect(r.json().error.message).toContain('Channel rate limit reached for model');
   });
 
   it('cooled-down keys are skipped by later requests', async () => {
@@ -306,18 +350,17 @@ describe('proxy', () => {
   });
 });
 
-describe('cooldown backoff under concurrency', () => {
-  it('concurrent 429s on the same key advance its fail streak', async () => {
+describe('429s under concurrency', () => {
+  it('concurrent 429s never bench the key or grow a long backoff', async () => {
     await setup({ pool: { mode: 'explicit', keyIds: [keyIds[0]] }, maxRetries: 0 });
-    handler = () => ({ status: 429, json: {} });
+    handler = () => ({ status: 429, json: {}, headers: { 'retry-after': '1' } });
     await Promise.all([chat(), chat(), chat()]);
-    expect(s.repos.upstreamKeys.get(keyIds[0])!.failStreak).toBe(3);
-    s.repos.upstreamKeys.setStatus(keyIds[0], 'cooldown', { cooldownUntil: 0 });
-    s.snapshots.updateKey(keyIds[0], { cooldownUntil: 0 });
-    await chat();
     const k = s.repos.upstreamKeys.get(keyIds[0])!;
-    expect(k.failStreak).toBe(4);
-    // 30s * 2^(4-1) = 240s of backoff
-    expect(k.cooldownUntil! - Date.now()).toBeGreaterThan(230_000);
+    expect(k.status).toBe('active');
+    expect(k.cooldownUntil).toBeNull();
+    // the per-model cooldown is short: after Retry-After the key is usable again
+    handler = () => ({ json: chatJson() });
+    await new Promise((r) => setTimeout(r, 1100));
+    expect((await chat()).statusCode).toBe(200);
   });
 });

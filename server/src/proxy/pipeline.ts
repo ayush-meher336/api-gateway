@@ -8,7 +8,7 @@ import { GatewayError } from '../errors.js';
 import type { NewAttempt, NewRequestLog } from '../logging/logWriter.js';
 import { computeCost, estimateUsage } from '../logging/usage.js';
 import { buildCandidates, soonestCooldown, type Candidate } from '../router/candidates.js';
-import { nextCooldown } from '../router/cooldown.js';
+import { nextCooldown, parseRetryAfter } from '../router/cooldown.js';
 import { resolveTargets } from '../router/resolve.js';
 import { orderCandidates } from '../router/strategies.js';
 import type { Services } from '../services.js';
@@ -127,8 +127,12 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
     }
 
     const now = Date.now();
-    const cands = buildCandidates(gk, targets, snap, now, { allows: (k) => keyAllowed(s, k) });
-    const ordered = orderCandidates(gk.strategy, gk.id, cands, s.router).slice(0, Math.max(1, gk.maxRetries + 1));
+    const cands = buildCandidates(gk, targets, snap, now, {
+      allows: (k, m) => keyAllowed(s, k) && s.rateLimits.keyAllowed(k.id, m.id, now) && !s.rateLimits.modelPaused(k.providerId, m.id, now),
+    });
+    // Not truncated: candidates on a model that gets paused mid-request are skipped without
+    // spending the retry budget, so later providers in the list are still reachable.
+    const ordered = orderCandidates(gk.strategy, gk.id, cands, s.router);
     if (!ordered.length) {
       const soon = soonestCooldown(gk, targets, snap);
       throw new GatewayError(
@@ -140,10 +144,17 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
     s.repos.gatewayKeys.touch(gk.id, now);
 
     let last: { status: number; message: string } | null = null;
-    for (let i = 0; i < ordered.length && !clientGone; i++) {
-      const r = await attemptOnce(ordered[i], i + 1);
+    let tried = 0;
+    let onlyRateLimited = true;
+    const budget = Math.max(1, gk.maxRetries + 1);
+    for (const c of ordered) {
+      if (clientGone || tried >= budget) break;
+      // a model found busy on this provider during this request: go to the next provider instead
+      if (s.rateLimits.modelPaused(c.provider.id, c.model.id) || !s.rateLimits.keyAllowed(c.key.id, c.model.id)) continue;
+      const r = await attemptOnce(c, ++tried);
       if (r.kind === 'retry') {
         last = r;
+        if (r.status !== 429) onlyRateLimited = false;
         continue;
       }
       return;
@@ -151,6 +162,9 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
     if (clientGone) {
       setError(499, 'client_aborted', 'Client disconnected');
       return;
+    }
+    if (last && onlyRateLimited) {
+      throw new GatewayError(429, 'rate_limit_error', 'upstream_rate_limited', `Every available provider is rate limiting this model right now. Last error: ${last.message}`);
     }
     throw new GatewayError(502, 'upstream_error', 'all_upstreams_failed', `All upstream attempts failed. Last error: ${last?.message ?? 'unknown'}`);
 
@@ -233,6 +247,13 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
             setError(res.status, 'upstream_client_error', msg);
             reply.code(res.status).send({ error: { type: 'upstream_error', code: `upstream_${res.status}`, message: msg } });
             return { kind: 'final' };
+          }
+          if (cls === 'rate_limited') {
+            // 429s are often model-wide on the provider's side: cool this key for this model only, briefly,
+            // and leave the key's status alone so it keeps serving other models.
+            const retryAfter = parseRetryAfter(res.headers.get('retry-after') ?? undefined, Date.now()) ?? undefined;
+            s.rateLimits.record429(c.provider.id, c.model.id, c.key.id, retryAfter);
+            return { kind: 'retry', status: 429, message: msg };
           }
           fail(cls, msg, res.headers.get('retry-after'));
           return { kind: 'retry', status: res.status, message: msg };

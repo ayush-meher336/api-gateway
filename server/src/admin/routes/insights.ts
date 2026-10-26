@@ -112,6 +112,15 @@ export function insightRoutes({ app, s }: AdminContext) {
         alerts.push({ kind: 'key_cooldown', severity: 'warning', message: `${where} is cooling down until ${new Date(k.cooldownUntil!).toISOString()}`, ref: { type: 'upstreamKey', id: k.id } });
       }
     }
+    for (const p of s.rateLimits.activePauses(now)) {
+      const m = s.repos.models.get(p.modelId);
+      alerts.push({
+        kind: 'model_busy',
+        severity: 'warning',
+        message: `${providers.get(p.providerId) ?? '?'}/${m?.upstreamModelId ?? p.modelId} is rate limiting (busy on the provider's side); routing around it until ${new Date(p.until).toISOString()}`,
+        ref: { type: 'provider', id: p.providerId },
+      });
+    }
     s.usage.clear();
     for (const g of s.repos.gatewayKeys.list()) {
       const spend = s.usage.gatewaySpend(g.id, now);

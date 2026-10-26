@@ -74,7 +74,7 @@ export function Overview() {
             <ul className="max-h-[300px] space-y-2 overflow-y-auto">
               {alerts.data.map((a, i) => (
                 <li key={i}>
-                  <Link to={a.ref.type === 'gatewayKey' ? `/gateway-keys/${a.ref.id}` : '/keys'} className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2">
+                  <Link to={a.ref.type === 'gatewayKey' ? `/gateway-keys/${a.ref.id}` : a.ref.type === 'provider' ? `/providers/${a.ref.id}` : '/keys'} className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2">
                     {a.severity === 'error' ? <XCircle className="mt-0.5 size-4 shrink-0 text-err" /> : a.severity === 'warning' ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" /> : <Info className="mt-0.5 size-4 shrink-0 text-accent" />}
                     <span className="break-words">{a.message}</span>
                   </Link>

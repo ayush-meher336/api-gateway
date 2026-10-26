@@ -220,8 +220,10 @@ describe('admin resources', () => {
     const [k1, k2] = s.repos.upstreamKeys.list();
     s.repos.upstreamKeys.setStatus(k1.id, 'invalid', { lastError: 'bad key' });
     s.repos.upstreamKeys.setStatus(k2.id, 'cooldown', { cooldownUntil: Date.now() + 60_000 });
+    s.rateLimits.record429(p.id, 1, k1.id, undefined);
+    s.rateLimits.record429(p.id, 1, k2.id, undefined);
     const kinds = (await req('GET', 'alerts')).json().map((a: any) => a.kind).sort();
-    expect(kinds).toEqual(['key_cooldown', 'key_invalid']);
+    expect(kinds).toEqual(['key_cooldown', 'key_invalid', 'model_busy']);
   });
 
   it('settings get/put', async () => {

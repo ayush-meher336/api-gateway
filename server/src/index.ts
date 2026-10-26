@@ -49,6 +49,7 @@ async function main() {
     } catch (err) {
       logger.error({ err }, 'persisting round-robin cursors failed');
     }
+    s.rateLimits.prune();
   }, 30_000);
   pruneTimer.unref();
   cursorTimer.unref();

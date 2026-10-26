@@ -21,7 +21,7 @@ function GeneralSettings() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Keep raw request logs (days)" hint="Hourly/daily usage totals are kept forever."><NumberInput value={f.retentionDays} onChange={set('retentionDays')} min={1} step={1} /></Field>
         <Field label="Default max retries for new gateway keys"><NumberInput value={f.defaultMaxRetries} onChange={set('defaultMaxRetries')} min={0} step={1} /></Field>
-        <Field label="Rate-limit cooldown (seconds)" hint="Used when the provider sends no Retry-After; doubles on repeat 429s."><NumberInput value={f.rateLimitCooldownMs / 1000} onChange={set('rateLimitCooldownMs', true)} min={1} /></Field>
+        <Field label="Rate-limit cooldown per key + model (seconds)" hint="After a 429, that key skips only that model for this long (or the provider's Retry-After). If two keys are refused for the same model, the model is routed around for ~10s."><NumberInput value={f.rateLimitCooldownMs / 1000} onChange={set('rateLimitCooldownMs', true)} min={1} /></Field>
         <Field label="Max cooldown (seconds)"><NumberInput value={f.maxCooldownMs / 1000} onChange={set('maxCooldownMs', true)} min={1} /></Field>
         <Field label="Server-error cooldown (seconds)" hint="After 5xx, network errors or timeouts."><NumberInput value={f.serverErrorCooldownMs / 1000} onChange={set('serverErrorCooldownMs', true)} min={0} /></Field>
         <Field label="Default timeout for new providers (seconds)"><NumberInput value={f.defaultProviderTimeoutMs / 1000} onChange={set('defaultProviderTimeoutMs', true)} min={1} /></Field>
