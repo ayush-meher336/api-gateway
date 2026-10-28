@@ -58,6 +58,15 @@ export function upstreamMessage(text: string, status: number): string {
   return text ? text.slice(0, 1000) : `Upstream returned HTTP ${status}`;
 }
 
+/** undici reports every failure as "fetch failed"; the useful part (ENOTFOUND, ECONNRESET, ...) is in `cause`. */
+export function describeFetchError(err: unknown): string {
+  const e = err as Error & { cause?: Error & { code?: string } };
+  const cause = e.cause;
+  if (!cause) return e.message;
+  const detail = cause.code && !cause.message?.includes(cause.code) ? `${cause.code} ${cause.message}` : cause.message;
+  return `${e.message} (${detail || cause.code})`;
+}
+
 function responseText(body: any): string {
   const msg = body?.choices?.[0]?.message;
   if (typeof msg?.content === 'string') return msg.content;
@@ -232,9 +241,10 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
           res = await s.fetchFn(ureq.url, { method: ureq.method, headers: ureq.headers, body: ureq.body, signal: ac.signal });
         } catch (err) {
           if (clientGone) return aborted('');
-          const msg = timedOut ? `Upstream timed out after ${c.provider.timeoutMs}ms` : `Network error: ${(err as Error).message}`;
+          const msg = timedOut ? `Upstream timed out after ${c.provider.timeoutMs}ms` : `Network error: ${describeFetchError(err)}`;
           rec(null, timedOut ? 'timeout' : 'network_error', msg);
-          fail('server_error', msg);
+          // A connection failure says nothing about the key (it is usually this machine's network), so don't bench it.
+          if (timedOut) fail('server_error', msg);
           return { kind: 'retry', status: timedOut ? 504 : 502, message: msg };
         }
 

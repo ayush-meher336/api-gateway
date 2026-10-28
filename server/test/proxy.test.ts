@@ -186,6 +186,18 @@ describe('proxy', () => {
     expect(up.seen).toHaveLength(2);
   });
 
+  it('network errors fail over without benching keys and log the underlying cause', async () => {
+    s.fetchFn = async () => {
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND api.example'), { code: 'ENOTFOUND' }) });
+    };
+    const r = await chat();
+    expect(r.statusCode).toBe(502);
+    expect(r.json().error.message).toContain('ENOTFOUND');
+    expect(s.repos.upstreamKeys.list().every((k) => k.status === 'active' && !k.cooldownUntil)).toBe(true);
+    s.fetchFn = (url, init) => fetch(url, init as RequestInit);
+    expect((await chat()).statusCode).toBe(200);
+  });
+
   it('all keys unavailable returns 503 no_available_upstream with soonest cooldown', async () => {
     const until = Date.now() + 60_000;
     for (const id of keyIds) s.repos.upstreamKeys.setStatus(id, 'cooldown', { cooldownUntil: until });
