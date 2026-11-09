@@ -112,6 +112,17 @@ describe('proxy', () => {
     expect(s.db.prepare('SELECT count(*) c FROM request_attempts').get()).toEqual({ c: 2 });
   });
 
+  it('quota_exceeded benches only that key for every model and never pauses the model', async () => {
+    const quota = { status: 429, json: { error: { message: 'quota exceeded', type: 'quota_exceeded', code: 'quota_exceeded' } } };
+    handler = (_req, n) => (n < 2 ? quota : { json: chatJson() });
+    expect((await chat()).statusCode).toBe(200);
+    expect(up.seen).toHaveLength(3);
+    const benched = s.repos.upstreamKeys.list().filter((k) => k.status === 'cooldown');
+    expect(benched).toHaveLength(2);
+    for (const k of benched) expect(k.cooldownUntil! - Date.now()).toBeGreaterThan(20 * 60_000);
+    expect(s.rateLimits.activePauses()).toHaveLength(0);
+  });
+
   it('a key cooled for one model still serves other models', async () => {
     handler = (_req, n) => (n === 0 ? { status: 429, json: {} } : { json: chatJson() });
     await setup({ pool: { mode: 'explicit', keyIds: [keyIds[0]] }, maxRetries: 0 });

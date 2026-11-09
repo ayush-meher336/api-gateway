@@ -8,7 +8,7 @@ import { GatewayError } from '../errors.js';
 import type { NewAttempt, NewRequestLog } from '../logging/logWriter.js';
 import { computeCost, estimateUsage } from '../logging/usage.js';
 import { buildCandidates, soonestCooldown, type Candidate } from '../router/candidates.js';
-import { nextCooldown, parseRetryAfter } from '../router/cooldown.js';
+import { COOLDOWN, nextCooldown, parseRetryAfter } from '../router/cooldown.js';
 import { resolveTargets } from '../router/resolve.js';
 import { orderCandidates } from '../router/strategies.js';
 import type { Services } from '../services.js';
@@ -65,6 +65,16 @@ export function describeFetchError(err: unknown): string {
   if (!cause) return e.message;
   const detail = cause.code && !cause.message?.includes(cause.code) ? `${cause.code} ${cause.message}` : cause.message;
   return `${e.message} (${detail || cause.code})`;
+}
+
+/** A 429 that means "this key has used up its quota", as opposed to a provider-wide busy signal. */
+export function isQuotaExhausted(text: string): boolean {
+  try {
+    const e = JSON.parse(text)?.error;
+    return [e?.code, e?.type].some((v) => v === 'quota_exceeded' || v === 'insufficient_quota');
+  } catch {
+    return false;
+  }
 }
 
 function responseText(body: any): string {
@@ -257,6 +267,12 @@ export async function handleProxy(endpoint: Endpoint, req: FastifyRequest, reply
             setError(res.status, 'upstream_client_error', msg);
             reply.code(res.status).send({ error: { type: 'upstream_error', code: `upstream_${res.status}`, message: msg } });
             return { kind: 'final' };
+          }
+          if (cls === 'rate_limited' && isQuotaExhausted(text)) {
+            // The key itself is out of quota (for every model), so bench it for a long while and
+            // keep this out of the model-wide pause: other keys still have quota.
+            s.setKeyStatus(c.key.id, 'cooldown', { cooldownUntil: Date.now() + COOLDOWN.quotaMs, lastError: msg.slice(0, 500) });
+            return { kind: 'retry', status: 429, message: msg };
           }
           if (cls === 'rate_limited') {
             // 429s are often model-wide on the provider's side: cool this key for this model only, briefly,

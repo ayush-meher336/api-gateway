@@ -5,6 +5,8 @@ export const COOLDOWN = {
   rateLimitBaseMs: 30_000,
   maxMs: 15 * 60_000,
   serverErrorMs: 15_000,
+  /** A key out of quota is retried after this long; if it is still out it is benched again. */
+  quotaMs: 30 * 60_000,
 };
 
 export function parseRetryAfter(h: string | undefined, now: number): number | null {
