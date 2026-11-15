@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Services } from '../services.js';
 import type { GatewayKey } from '../db/types.js';
 import type { ConfigSnapshot } from '../router/snapshot.js';
@@ -37,12 +37,15 @@ export function registerProxyRoutes(app: FastifyInstance, s: Services) {
       await handleProxy(endpoint, req, reply, s);
       return reply;
     });
-  route('/v1/chat/completions', 'chat');
-  route('/v1/completions', 'completions');
-  route('/v1/embeddings', 'embeddings');
-  route('/v1/messages', 'messages');
+  // Also served without /v1, for clients configured with a base URL of just http://host:port.
+  for (const prefix of ['/v1', '']) {
+    route(`${prefix}/chat/completions`, 'chat');
+    route(`${prefix}/completions`, 'completions');
+    route(`${prefix}/embeddings`, 'embeddings');
+    route(`${prefix}/messages`, 'messages');
+  }
 
-  app.get('/v1/models', async (req, reply) => {
+  const listModels = async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       const gk = authenticate(req, s);
       return { object: 'list', data: listAllowedModels(gk, s.snapshots.get()) };
@@ -50,5 +53,13 @@ export function registerProxyRoutes(app: FastifyInstance, s: Services) {
       if (err instanceof GatewayError) return reply.code(err.status).send(err.toBody());
       throw err;
     }
+  };
+  app.get('/v1/models', listModels);
+  // /models is also the dashboard's Models page: browsers (Accept: text/html, no API key) get the dashboard.
+  app.get('/models', async (req, reply) => {
+    const hasKey = !!(req.headers.authorization || req.headers['x-api-key']);
+    const wantsHtml = String(req.headers.accept ?? '').includes('text/html');
+    if (!hasKey && wantsHtml && typeof reply.sendFile === 'function') return reply.type('text/html').sendFile('index.html');
+    return listModels(req, reply);
   });
 }

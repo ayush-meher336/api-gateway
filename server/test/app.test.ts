@@ -54,6 +54,19 @@ describe('app', () => {
     expect((await app.inject('/assets/app.js')).body).toBe('console.log(1)');
   });
 
+  it('API clients whose base URL lacks /v1 get JSON from /models and the API routes, browsers still get the dashboard', async () => {
+    const asClient = await app.inject({ url: '/models', headers: { authorization: 'Bearer gw-wrong', accept: 'application/json' } });
+    expect(asClient.headers['content-type']).toContain('application/json');
+    expect(asClient.statusCode).toBe(401);
+    const noKey = await app.inject({ url: '/models', headers: { accept: 'application/json' } });
+    expect(noKey.headers['content-type']).toContain('application/json');
+    const browser = await app.inject({ url: '/models', headers: { accept: 'text/html,application/xhtml+xml' } });
+    expect(browser.body).toContain('dashboard');
+    const chat = await app.inject({ method: 'POST', url: '/chat/completions', headers: { authorization: 'Bearer gw-wrong' }, payload: { model: 'x', messages: [] } });
+    expect(chat.statusCode).toBe(401);
+    expect(chat.json().error).toBeDefined();
+  });
+
   it('serves assets added after startup (dashboard rebuilt while running)', async () => {
     writeFileSync(join(webDir, 'assets', 'new-hash.js'), 'console.log(2)');
     const r = await app.inject('/assets/new-hash.js');
