@@ -15,7 +15,9 @@ export interface AppOptions {
   webDir?: string;
 }
 
-const isApiPath = (url: string) => url.startsWith('/v1/') || url === '/v1' || url.startsWith('/admin/api') || url === '/health';
+// /api/* is what clients probe for LM Studio or Ollama; answering those with the dashboard HTML misleads them.
+const isApiPath = (url: string) =>
+  url.startsWith('/v1/') || url === '/v1' || url.startsWith('/api/') || url === '/api' || url.startsWith('/admin/api') || url === '/health';
 
 export function buildApp(s: Services, opts: AppOptions = {}): FastifyInstance {
   const app = Fastify({

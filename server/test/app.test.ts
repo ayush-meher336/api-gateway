@@ -41,7 +41,7 @@ describe('app', () => {
   });
 
   it('unknown API paths get a standard 404 body', async () => {
-    for (const url of ['/v1/foo', '/admin/api/nope']) {
+    for (const url of ['/v1/foo', '/admin/api/nope', '/api/v1/models', '/api/tags']) {
       const r = await app.inject(url);
       expect(r.statusCode, url).toBe(404);
       expect(r.json().error).toBeDefined();
